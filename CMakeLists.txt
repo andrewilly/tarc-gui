@@ -15,7 +15,7 @@ endif()
 find_package(Qt6 REQUIRED COMPONENTS Widgets Core Gui)
 
 # ────────────────────────────────────────────────────────────────────────────
-# DIPENDENZE DEL CORE (FetchContent direttamente)
+# DIPENDENZE DEL CORE (FetchContent)
 # ────────────────────────────────────────────────────────────────────────────
 include(FetchContent)
 
@@ -66,7 +66,7 @@ add_library(xxhash_lib STATIC ${xxhash_SOURCE_DIR}/xxhash.c)
 target_include_directories(xxhash_lib PUBLIC ${xxhash_SOURCE_DIR})
 
 # ────────────────────────────────────────────────────────────────────────────
-# CORE TARC - Includi i file sorgente direttamente
+# CORE TARC (usa i file del submodule)
 # ────────────────────────────────────────────────────────────────────────────
 set(CORE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/core/src/engine.cpp
@@ -74,7 +74,6 @@ set(CORE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/core/src/license.cpp
 )
 
-# Crea la libreria statica del core
 add_library(tarc_core STATIC ${CORE_SOURCES})
 
 target_include_directories(tarc_core PUBLIC
@@ -97,7 +96,14 @@ if(APPLE)
 endif()
 
 # ────────────────────────────────────────────────────────────────────────────
-# GUI SOURCES - Con gestione MOC esplicita
+# TARC WRAPPER (per la GUI)
+# ────────────────────────────────────────────────────────────────────────────
+set(WRAPPER_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core/tarc_wrapper.cpp
+)
+
+# ────────────────────────────────────────────────────────────────────────────
+# GUI SOURCES
 # ────────────────────────────────────────────────────────────────────────────
 set(GUI_HEADERS
     src/gui/mainwindow.h
@@ -119,24 +125,26 @@ qt6_add_resources(GUI_RESOURCES
     src/gui/resources.qrc
 )
 
-# IMPORTANTE: Prima creiamo i file MOC
+# Genera i file MOC per le classi Qt
 qt6_wrap_cpp(GUI_MOC ${GUI_HEADERS})
 
-# Executable
+# Eseguibile
 add_executable(tarc-gui
     ${GUI_SOURCES}
     ${GUI_MOC}
     ${GUI_RESOURCES}
+    ${WRAPPER_SOURCES}
 )
 
-# Include directories per la GUI
+# Directory di inclusione
 target_include_directories(tarc-gui PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/src/gui
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/core
     ${CMAKE_CURRENT_SOURCE_DIR}/core/include
 )
 
-# Link libraries
+# Link librerie
 target_link_libraries(tarc-gui PRIVATE
     Qt6::Widgets
     Qt6::Core
@@ -144,7 +152,10 @@ target_link_libraries(tarc-gui PRIVATE
     tarc_core
 )
 
-# Platform-specific settings
+# ────────────────────────────────────────────────────────────────────────────
+# IMPOSTAZIONI SPECIFICHE PER PIATTAFORMA
+# ────────────────────────────────────────────────────────────────────────────
+
 if(WIN32)
     target_compile_definitions(tarc-gui PRIVATE 
         _CRT_SECURE_NO_WARNINGS
@@ -172,23 +183,9 @@ if(UNIX AND NOT APPLE)
     )
 endif()
 
-# Crea il wrapper TarcWrapper se non esiste
-if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/core/tarc_wrapper.cpp")
-    file(WRITE "${CMAKE_CURRENT_SOURCE_DIR}/src/core/tarc_wrapper.cpp" 
-        "#include \"tarc_wrapper.h\"\n\nTarcWrapper::TarcWrapper(QObject *parent) : QObject(parent) {}\n\nbool TarcWrapper::compress(const QString& archive, const QStringList& files, bool append, int level, QString& error) { return true; }\n\nbool TarcWrapper::extract(const QString& archive, const QString& targetDir, QString& error) { return true; }\n\nbool TarcWrapper::remove(const QString& archive, const QStringList& files, QString& error) { return true; }\n\nbool TarcWrapper::test(const QString& archive, QString& error) { return true; }\n")
-    file(WRITE "${CMAKE_CURRENT_SOURCE_DIR}/src/core/tarc_wrapper.h"
-        "#pragma once\n\n#include <QObject>\n#include <QString>\n#include <QStringList>\n\nclass TarcWrapper : public QObject\n{\n    Q_OBJECT\npublic:\n    explicit TarcWrapper(QObject *parent = nullptr);\n    \n    bool compress(const QString& archive, const QStringList& files, bool append, int level, QString& error);\n    bool extract(const QString& archive, const QString& targetDir, QString& error);\n    bool remove(const QString& archive, const QStringList& files, QString& error);\n    bool test(const QString& archive, QString& error);\n\nsignals:\n    void progressUpdated(int percent, const QString& currentFile);\n};\n")
-endif()
-
-# Aggiungi TarcWrapper ai sorgenti
-target_sources(tarc-gui PRIVATE
-    src/core/tarc_wrapper.cpp
-)
-
-target_include_directories(tarc-gui PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/core
-)
-
+# ────────────────────────────────────────────────────────────────────────────
+# INFO BUILD
+# ────────────────────────────────────────────────────────────────────────────
 message(STATUS "")
 message(STATUS "  ╔════════════════════════════════════════════╗")
 message(STATUS "  ║        TARC GUI v${PROJECT_VERSION} - BUILD CONFIG      ║")
