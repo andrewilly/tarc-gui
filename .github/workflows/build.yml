@@ -21,22 +21,19 @@ jobs:
           - os: windows-latest
             artifact_name: tarc-gui-windows-x64.exe
             executable: tarc-gui.exe
-            cmake_generator: "Visual Studio 17 2022"
-            cmake_arch: "-A x64"
+            qt_arch: win64_msvc2019_64
             
           # Linux x86_64
           - os: ubuntu-latest
             artifact_name: tarc-gui-linux-x86_64
             executable: tarc-gui
-            cmake_generator: "Unix Makefiles"
-            cmake_arch: ""
+            qt_arch: gcc_64
             
           # macOS Universal (Intel + Apple Silicon)
           - os: macos-latest
             artifact_name: tarc-gui-macos-universal
             executable: tarc-gui.app/Contents/MacOS/tarc-gui
-            cmake_generator: "Unix Makefiles"
-            cmake_arch: "-DCMAKE_OSX_ARCHITECTURES=x86_64;arm64"
+            qt_arch: clang_64
 
     steps:
     - name: Checkout code
@@ -52,9 +49,10 @@ jobs:
       uses: jurplel/install-qt-action@v3
       with:
         version: '6.5.3'
-        arch: 'win64_msvc2022_64'
+        arch: ${{ matrix.qt_arch }}
         host: 'windows'
         target: 'desktop'
+        install-deps: true
         
     - name: Setup MSVC (Windows)
       if: runner.os == 'Windows'
@@ -90,9 +88,10 @@ jobs:
       uses: jurplel/install-qt-action@v3
       with:
         version: '6.5.3'
-        arch: 'gcc_64'
+        arch: ${{ matrix.qt_arch }}
         host: 'linux'
         target: 'desktop'
+        install-deps: true
 
     # ────────────────────────────────────────────────────────────────────────
     # macOS
@@ -107,26 +106,74 @@ jobs:
       uses: jurplel/install-qt-action@v3
       with:
         version: '6.5.3'
-        arch: 'clang_64'
+        arch: ${{ matrix.qt_arch }}
         host: 'mac'
         target: 'desktop'
+        install-deps: true
 
     # ────────────────────────────────────────────────────────────────────────
-    # CONFIGURE & BUILD
+    # CONFIGURE & BUILD (Windows)
     # ────────────────────────────────────────────────────────────────────────
-    - name: Configure CMake
+    - name: Configure CMake (Windows)
+      if: runner.os == 'Windows'
       shell: bash
       run: |
         mkdir -p build
         cd build
         cmake .. \
-          -G "${{ matrix.cmake_generator }}" \
-          ${{ matrix.cmake_arch }} \
+          -G "Visual Studio 17 2022" \
+          -A x64 \
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_CXX_STANDARD=17 \
-          -DCMAKE_C_STANDARD=11
+          -DCMAKE_C_STANDARD=11 \
+          -DCMAKE_PREFIX_PATH="${{ env.Qt6_DIR }}"
 
-    - name: Build Project
+    - name: Build Project (Windows)
+      if: runner.os == 'Windows'
+      shell: bash
+      run: |
+        cd build
+        cmake --build . --config Release --parallel 2
+
+    # ────────────────────────────────────────────────────────────────────────
+    # CONFIGURE & BUILD (Linux/macOS)
+    # ────────────────────────────────────────────────────────────────────────
+    - name: Configure CMake (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        mkdir -p build
+        cd build
+        cmake .. \
+          -G "Unix Makefiles" \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_CXX_STANDARD=17 \
+          -DCMAKE_C_STANDARD=11 \
+          -DCMAKE_PREFIX_PATH="${{ env.Qt6_DIR }}"
+
+    - name: Build Project (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        cd build
+        cmake --build . --config Release --parallel 2
+
+    - name: Configure CMake (macOS)
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        mkdir -p build
+        cd build
+        cmake .. \
+          -G "Unix Makefiles" \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_CXX_STANDARD=17 \
+          -DCMAKE_C_STANDARD=11 \
+          -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" \
+          -DCMAKE_PREFIX_PATH="${{ env.Qt6_DIR }}"
+
+    - name: Build Project (macOS)
+      if: runner.os == 'macOS'
       shell: bash
       run: |
         cd build
@@ -181,37 +228,22 @@ jobs:
         & ${{ env.EXECUTABLE_PATH }} --help
       continue-on-error: true
 
-    - name: Test executable (Linux/macOS)
-      if: runner.os != 'Windows'
+    - name: Test executable (Linux)
+      if: runner.os == 'Linux'
       shell: bash
       run: |
-        chmod +x ${{ env.EXECUTABLE_PATH }} 2>/dev/null || true
-        if [ -d "${{ env.EXECUTABLE_PATH }}" ]; then
-          "${{ env.EXECUTABLE_PATH }}/Contents/MacOS/tarc-gui" --help || true
-        else
-          ${{ env.EXECUTABLE_PATH }} --help || true
-        fi
+        chmod +x ${{ env.EXECUTABLE_PATH }}
+        ${{ env.EXECUTABLE_PATH }} --help || true
       continue-on-error: true
 
-    # ────────────────────────────────────────────────────────────────────────
-    # CREATE DMG (macOS)
-    # ────────────────────────────────────────────────────────────────────────
-    - name: Create DMG (macOS)
-      if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/')
+    - name: Test executable (macOS)
+      if: runner.os == 'macOS'
       shell: bash
       run: |
-        brew install create-dmg
-        create-dmg \
-          --volname "TARC GUI" \
-          --window-pos 200 120 \
-          --window-size 800 400 \
-          --icon-size 100 \
-          --icon "tarc-gui.app" 175 190 \
-          --hide-extension "tarc-gui.app" \
-          --app-drop-link 625 190 \
-          "tarc-gui-macos-universal.dmg" \
-          "${{ env.EXECUTABLE_PATH }}"
-        echo "DMG_PATH=tarc-gui-macos-universal.dmg" >> $GITHUB_ENV
+        if [ -d "${{ env.EXECUTABLE_PATH }}" ]; then
+          "${{ env.EXECUTABLE_PATH }}/Contents/MacOS/tarc-gui" --help || true
+        fi
+      continue-on-error: true
 
     # ────────────────────────────────────────────────────────────────────────
     # UPLOAD ARTIFACTS
@@ -232,16 +264,8 @@ jobs:
         path: ${{ env.EXECUTABLE_PATH }}
         if-no-files-found: error
 
-    - name: Upload artifact (macOS - DMG)
-      if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/')
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ matrix.artifact_name }}
-        path: ${{ env.DMG_PATH }}
-        if-no-files-found: error
-
-    - name: Upload artifact (macOS - APP Bundle)
-      if: runner.os == 'macOS' && !startsWith(github.ref, 'refs/tags/')
+    - name: Upload artifact (macOS)
+      if: runner.os == 'macOS'
       uses: actions/upload-artifact@v4
       with:
         name: ${{ matrix.artifact_name }}
@@ -270,14 +294,20 @@ jobs:
         mkdir -p release_files
         
         # Windows
-        cp artifacts/tarc-gui-windows-x64.exe/tarc-gui.exe release_files/tarc-gui-windows-x64.exe 2>/dev/null || true
+        if [ -f "artifacts/tarc-gui-windows-x64.exe/tarc-gui.exe" ]; then
+          cp artifacts/tarc-gui-windows-x64.exe/tarc-gui.exe release_files/tarc-gui-windows-x64.exe
+        fi
         
         # Linux
-        cp artifacts/tarc-gui-linux-x86_64/tarc-gui release_files/tarc-gui-linux-x86_64 2>/dev/null || true
-        chmod +x release_files/tarc-gui-linux-x86_64 2>/dev/null || true
+        if [ -f "artifacts/tarc-gui-linux-x86_64/tarc-gui" ]; then
+          cp artifacts/tarc-gui-linux-x86_64/tarc-gui release_files/tarc-gui-linux-x86_64
+          chmod +x release_files/tarc-gui-linux-x86_64
+        fi
         
         # macOS
-        cp artifacts/tarc-gui-macos-universal/*.dmg release_files/ 2>/dev/null || true
+        if [ -d "artifacts/tarc-gui-macos-universal/tarc-gui.app" ]; then
+          cp -r artifacts/tarc-gui-macos-universal/tarc-gui.app release_files/
+        fi
         
         echo "✅ File preparati:"
         ls -lh release_files/
@@ -288,7 +318,7 @@ jobs:
         files: |
           release_files/tarc-gui-windows-x64.exe
           release_files/tarc-gui-linux-x86_64
-          release_files/*.dmg
+          release_files/tarc-gui.app/**
         draft: false
         prerelease: false
         generate_release_notes: true
