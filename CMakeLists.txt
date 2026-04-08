@@ -14,10 +14,41 @@ endif()
 # Find Qt6
 find_package(Qt6 REQUIRED COMPONENTS Widgets Core Gui)
 
-# TARC core (submodule)
-add_subdirectory(core)
+# ────────────────────────────────────────────────────────────────────────────
+# TARC CORE (submodule)
+# ────────────────────────────────────────────────────────────────────────────
+# Verifica se il submodule esiste
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/core/CMakeLists.txt")
+    add_subdirectory(core)
+    
+    # Il core produce un eseguibile chiamato "tarc"
+    # Creiamo un alias per la libreria
+    if(NOT TARGET tarc_core)
+        # Crea un target INTERFACE per linkare i file del core
+        add_library(tarc_core INTERFACE)
+        target_include_directories(tarc_core INTERFACE 
+            ${CMAKE_CURRENT_SOURCE_DIR}/core/include
+        )
+        target_link_libraries(tarc_core INTERFACE
+            ${CMAKE_CURRENT_SOURCE_DIR}/core/src/engine.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/core/src/io.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/core/src/license.cpp
+        )
+        # Link dipendenze del core
+        target_link_libraries(tarc_core INTERFACE
+            libzstd_static
+            lz4_static
+            liblzma
+            xxhash_lib
+        )
+    endif()
+else()
+    message(WARNING "Core submodule not found! Please run: git submodule update --init --recursive")
+endif()
 
-# GUI sources (TUTTI i file)
+# ────────────────────────────────────────────────────────────────────────────
+# GUI SOURCES
+# ────────────────────────────────────────────────────────────────────────────
 set(GUI_SOURCES
     src/gui/main.cpp
     src/gui/mainwindow.cpp
@@ -69,6 +100,14 @@ if(APPLE)
     )
     set_target_properties(tarc-gui PROPERTIES
         MACOSX_BUNDLE TRUE
+    )
+endif()
+
+# Linux
+if(UNIX AND NOT APPLE)
+    target_link_libraries(tarc-gui PRIVATE
+        pthread
+        dl
     )
 endif()
 
