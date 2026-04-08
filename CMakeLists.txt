@@ -11,8 +11,8 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
-# Find Qt6
-find_package(Qt6 REQUIRED COMPONENTS Widgets Core Gui)
+# Find Qt6 - AGGIUNTO SerialPort QUI! ✅
+find_package(Qt6 REQUIRED COMPONENTS Widgets Core Gui SerialPort)
 
 # ────────────────────────────────────────────────────────────────────────────
 # DIPENDENZE DEL CORE (FetchContent)
@@ -144,11 +144,12 @@ target_include_directories(tarc-gui PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/core/include
 )
 
-# Link librerie
+# Link librerie - AGGIUNTO Qt6::SerialPort QUI! ✅
 target_link_libraries(tarc-gui PRIVATE
     Qt6::Widgets
     Qt6::Core
     Qt6::Gui
+    Qt6::SerialPort
     tarc_core
 )
 
