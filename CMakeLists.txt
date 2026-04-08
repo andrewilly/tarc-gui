@@ -17,12 +17,7 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets Core Gui)
 # TARC core (submodule)
 add_subdirectory(core)
 
-# Wrapper per core TARC
-set(CORE_WRAPPER_SOURCES
-    src/core/tarc_wrapper.cpp
-)
-
-# GUI sources
+# GUI sources (TUTTI i file)
 set(GUI_SOURCES
     src/gui/main.cpp
     src/gui/mainwindow.cpp
@@ -39,7 +34,6 @@ qt6_add_resources(GUI_RESOURCES
 # Executable
 qt6_add_executable(tarc-gui
     ${GUI_SOURCES}
-    ${CORE_WRAPPER_SOURCES}
     ${GUI_RESOURCES}
 )
 
@@ -55,7 +49,7 @@ target_link_libraries(tarc-gui PRIVATE
     Qt6::Widgets
     Qt6::Core
     Qt6::Gui
-    tarc_core  # Dal submodule
+    tarc_core
 )
 
 # Platform-specific settings
@@ -77,12 +71,6 @@ if(APPLE)
         MACOSX_BUNDLE TRUE
     )
 endif()
-
-# Install
-install(TARGETS tarc-gui
-    RUNTIME DESTINATION bin
-    BUNDLE DESTINATION .
-)
 
 message(STATUS "")
 message(STATUS "  ╔════════════════════════════════════════════╗")
