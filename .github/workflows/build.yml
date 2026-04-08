@@ -1,0 +1,357 @@
+name: Build TARC GUI
+
+on:
+  push:
+    branches: [ main, master ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Windows x64
+          - os: windows-latest
+            artifact_name: tarc-gui-windows-x64.exe
+            executable: tarc-gui.exe
+            cmake_generator: "Visual Studio 17 2022"
+            cmake_arch: "-A x64"
+            qt_arch: "win64_msvc2022_64"
+            
+          # Linux x86_64
+          - os: ubuntu-latest
+            artifact_name: tarc-gui-linux-x86_64
+            executable: tarc-gui
+            cmake_generator: "Unix Makefiles"
+            cmake_arch: ""
+            qt_arch: "gcc_64"
+            
+          # macOS Universal (Intel + Apple Silicon)
+          - os: macos-latest
+            artifact_name: tarc-gui-macos-universal
+            executable: tarc-gui.app/Contents/MacOS/tarc-gui
+            cmake_generator: "Unix Makefiles"
+            cmake_arch: "-DCMAKE_OSX_ARCHITECTURES=x86_64;arm64"
+            qt_arch: "clang_64"
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    # ────────────────────────────────────────────────────────────────────────
+    # WINDOWS
+    # ────────────────────────────────────────────────────────────────────────
+    - name: Setup Qt6 (Windows)
+      if: runner.os == 'Windows'
+      uses: jurplel/install-qt-action@v3
+      with:
+        version: '6.5.3'
+        arch: 'win64_msvc2022_64'
+        host: 'windows'
+        target: 'desktop'
+        tools: 'tools_ifw'
+        
+    - name: Setup MSVC (Windows)
+      if: runner.os == 'Windows'
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
+
+    # ────────────────────────────────────────────────────────────────────────
+    # LINUX
+    # ────────────────────────────────────────────────────────────────────────
+    - name: Install dependencies (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          ninja-build \
+          libgl1-mesa-dev \
+          libxcb-util1 \
+          libxcb-util-dev \
+          libxcb-icccm4-dev \
+          libxcb-keysyms1-dev \
+          libxcb-xinerama0-dev \
+          libxcb-shape0-dev \
+          libxcb-xfixes0-dev \
+          libxcb-xkb-dev \
+          libxcb-cursor-dev \
+          libxcb-xrm-dev
+
+    - name: Setup Qt6 (Linux)
+      if: runner.os == 'Linux'
+      uses: jurplel/install-qt-action@v3
+      with:
+        version: '6.5.3'
+        arch: 'gcc_64'
+        host: 'linux'
+        target: 'desktop'
+        tools: 'tools_ifw'
+
+    # ────────────────────────────────────────────────────────────────────────
+    # macOS
+    # ────────────────────────────────────────────────────────────────────────
+    - name: Install dependencies (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        brew install cmake ninja
+
+    - name: Setup Qt6 (macOS)
+      if: runner.os == 'macOS'
+      uses: jurplel/install-qt-action@v3
+      with:
+        version: '6.5.3'
+        arch: 'clang_64'
+        host: 'mac'
+        target: 'desktop'
+        tools: 'tools_ifw'
+
+    # ────────────────────────────────────────────────────────────────────────
+    # CONFIGURE & BUILD (Windows)
+    # ────────────────────────────────────────────────────────────────────────
+    - name: Configure CMake (Windows)
+      if: runner.os == 'Windows'
+      shell: bash
+      run: |
+        mkdir -p build
+        cd build
+        cmake .. \
+          -G "${{ matrix.cmake_generator }}" \
+          ${{ matrix.cmake_arch }} \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_CXX_STANDARD=17 \
+          -DCMAKE_C_STANDARD=11 \
+          -DCMAKE_PREFIX_PATH="${{ env.Qt6_DIR }}"
+
+    - name: Build Project (Windows)
+      if: runner.os == 'Windows'
+      shell: bash
+      run: |
+        cd build
+        cmake --build . --config Release --parallel 2
+
+    # ────────────────────────────────────────────────────────────────────────
+    # CONFIGURE & BUILD (Linux/macOS)
+    # ────────────────────────────────────────────────────────────────────────
+    - name: Configure CMake (Linux/macOS)
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        mkdir -p build
+        cd build
+        cmake .. \
+          -G "${{ matrix.cmake_generator }}" \
+          ${{ matrix.cmake_arch }} \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_CXX_STANDARD=17 \
+          -DCMAKE_C_STANDARD=11 \
+          -DCMAKE_PREFIX_PATH="${{ env.Qt6_DIR }}"
+
+    - name: Build Project (Linux/macOS)
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        cd build
+        cmake --build . --config Release --parallel 2
+
+    # ────────────────────────────────────────────────────────────────────────
+    # FIND EXECUTABLE
+    # ────────────────────────────────────────────────────────────────────────
+    - name: Find executable (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        if (Test-Path "build/Release/tarc-gui.exe") {
+          echo "EXECUTABLE_PATH=build/Release/tarc-gui.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        } elseif (Test-Path "build/tarc-gui.exe") {
+          echo "EXECUTABLE_PATH=build/tarc-gui.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        } else {
+          Get-ChildItem -Path build -Filter "tarc-gui.exe" -Recurse | Select-Object -First 1 | ForEach-Object { echo "EXECUTABLE_PATH=$($_.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append }
+        }
+
+    - name: Find executable (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        if [ -f "build/tarc-gui" ]; then
+          echo "EXECUTABLE_PATH=build/tarc-gui" >> $GITHUB_ENV
+        elif [ -f "build/Release/tarc-gui" ]; then
+          echo "EXECUTABLE_PATH=build/Release/tarc-gui" >> $GITHUB_ENV
+        else
+          find build -name "tarc-gui" -executable -type f | head -1 | xargs -I {} echo "EXECUTABLE_PATH={}" >> $GITHUB_ENV
+        fi
+
+    - name: Find executable (macOS)
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        if [ -d "build/tarc-gui.app" ]; then
+          echo "EXECUTABLE_PATH=build/tarc-gui.app" >> $GITHUB_ENV
+        elif [ -f "build/tarc-gui" ]; then
+          echo "EXECUTABLE_PATH=build/tarc-gui" >> $GITHUB_ENV
+        else
+          find build -name "*.app" -type d | head -1 | xargs -I {} echo "EXECUTABLE_PATH={}" >> $GITHUB_ENV
+        fi
+
+    # ────────────────────────────────────────────────────────────────────────
+    # VERIFY ARCHITECTURE (macOS)
+    # ────────────────────────────────────────────────────────────────────────
+    - name: Verify architecture (macOS)
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        echo "Verificando architettura del bundle macOS..."
+        if [ -d "${{ env.EXECUTABLE_PATH }}" ]; then
+          file "${{ env.EXECUTABLE_PATH }}/Contents/MacOS/tarc-gui"
+          if file "${{ env.EXECUTABLE_PATH }}/Contents/MacOS/tarc-gui" | grep -q "universal"; then
+            echo "✅ Universal binary OK (x86_64 + arm64)"
+          else
+            echo "⚠️ Il binario non è universale"
+          fi
+        fi
+
+    # ────────────────────────────────────────────────────────────────────────
+    # TEST EXECUTABLE
+    # ────────────────────────────────────────────────────────────────────────
+    - name: Test executable (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        & ${{ env.EXECUTABLE_PATH }} --help
+      continue-on-error: true
+
+    - name: Test executable (Linux/macOS)
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        chmod +x ${{ env.EXECUTABLE_PATH }} 2>/dev/null || true
+        if [ -d "${{ env.EXECUTABLE_PATH }}" ]; then
+          "${{ env.EXECUTABLE_PATH }}/Contents/MacOS/tarc-gui" --help || true
+        else
+          ${{ env.EXECUTABLE_PATH }} --help || true
+        fi
+      continue-on-error: true
+
+    # ────────────────────────────────────────────────────────────────────────
+    # DEPLOY (macOS - crea DMG)
+    # ────────────────────────────────────────────────────────────────────────
+    - name: Create DMG (macOS)
+      if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/')
+      shell: bash
+      run: |
+        brew install create-dmg
+        create-dmg \
+          --volname "TARC GUI" \
+          --window-pos 200 120 \
+          --window-size 800 400 \
+          --icon-size 100 \
+          --icon "tarc-gui.app" 175 190 \
+          --hide-extension "tarc-gui.app" \
+          --app-drop-link 625 190 \
+          "tarc-gui-macos-universal.dmg" \
+          "${{ env.EXECUTABLE_PATH }}"
+        echo "DMG_PATH=tarc-gui-macos-universal.dmg" >> $GITHUB_ENV
+
+    # ────────────────────────────────────────────────────────────────────────
+    # UPLOAD ARTIFACTS
+    # ────────────────────────────────────────────────────────────────────────
+    - name: Upload artifact (Windows)
+      if: runner.os == 'Windows'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.artifact_name }}
+        path: ${{ env.EXECUTABLE_PATH }}
+        if-no-files-found: error
+
+    - name: Upload artifact (Linux)
+      if: runner.os == 'Linux'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.artifact_name }}
+        path: ${{ env.EXECUTABLE_PATH }}
+        if-no-files-found: error
+
+    - name: Upload artifact (macOS - DMG)
+      if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/')
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.artifact_name }}
+        path: ${{ env.DMG_PATH }}
+        if-no-files-found: error
+
+    - name: Upload artifact (macOS - APP Bundle)
+      if: runner.os == 'macOS' && !startsWith(github.ref, 'refs/tags/')
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.artifact_name }}
+        path: ${{ env.EXECUTABLE_PATH }}
+        if-no-files-found: error
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # CREATE RELEASE
+  # ──────────────────────────────────────────────────────────────────────────
+  create-release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: List artifacts
+      run: |
+        echo "📦 Artifacts scaricati:"
+        ls -la artifacts/
+        echo ""
+        echo "📁 Dettaglio file:"
+        find artifacts -type f -exec ls -lh {} \;
+        find artifacts -type d -name "*.app" -exec ls -lh {} \; 2>/dev/null || true
+
+    - name: Prepare release files (Windows)
+      run: |
+        mkdir -p release_files
+        # Windows
+        cp artifacts/tarc-gui-windows-x64.exe/tarc-gui.exe release_files/tarc-gui-windows-x64.exe 2>/dev/null || true
+        
+        # Linux
+        cp artifacts/tarc-gui-linux-x86_64/tarc-gui release_files/tarc-gui-linux-x86_64 2>/dev/null || true
+        chmod +x release_files/tarc-gui-linux-x86_64 2>/dev/null || true
+        
+        # macOS
+        cp artifacts/tarc-gui-macos-universal/*.dmg release_files/ 2>/dev/null || true
+        if [ -d "artifacts/tarc-gui-macos-universal/tarc-gui.app" ]; then
+          cp -r artifacts/tarc-gui-macos-universal/tarc-gui.app release_files/ 2>/dev/null || true
+        fi
+        
+        echo "✅ File preparati per la release:"
+        ls -lh release_files/
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          release_files/tarc-gui-windows-x64.exe
+          release_files/tarc-gui-linux-x86_64
+          release_files/*.dmg
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
