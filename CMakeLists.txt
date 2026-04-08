@@ -11,9 +11,8 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
-# Find Qt6 (richiede anche Core5Compat per alcuni componenti)
+# Find Qt6 (solo moduli necessari)
 find_package(Qt6 REQUIRED COMPONENTS Widgets Core Gui)
-find_package(Qt6Core5Compat REQUIRED)
 
 # ────────────────────────────────────────────────────────────────────────────
 # DIPENDENZE DEL CORE (FetchContent direttamente)
@@ -137,7 +136,6 @@ target_link_libraries(tarc-gui PRIVATE
     Qt6::Widgets
     Qt6::Core
     Qt6::Gui
-    Qt6::Core5Compat
     tarc_core
 )
 
