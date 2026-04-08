@@ -2,11 +2,11 @@
 
 #include <QDialog>
 #include <QSettings>
-
-class QSpinBox;
-class QComboBox;
-class QCheckBox;
-class QPushButton;
+#include <QLineEdit>      // ← AGGIUNGI
+#include <QPushButton>    // ← AGGIUNGI
+#include <QSpinBox>       // ← AGGIUNGI
+#include <QComboBox>      // ← AGGIUNGI
+#include <QCheckBox>      // ← AGGIUNGI
 
 class SettingsDialog : public QDialog
 {
