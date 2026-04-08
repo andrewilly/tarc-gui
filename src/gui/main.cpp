@@ -1,6 +1,7 @@
 #include <QApplication>
 #include <QIcon>
-#include <QFontDatabase>
+#include <QFile>          // ← AGGIUNGI QUESTA RIGA
+#include <QTextStream>    // Opzionale, se necessario
 #include "mainwindow.h"
 
 int main(int argc, char *argv[])
