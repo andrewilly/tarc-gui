@@ -11,8 +11,9 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
-# Find Qt6
+# Find Qt6 (richiede anche Core5Compat per alcuni componenti)
 find_package(Qt6 REQUIRED COMPONENTS Widgets Core Gui)
+find_package(Qt6Core5Compat REQUIRED)
 
 # ────────────────────────────────────────────────────────────────────────────
 # DIPENDENZE DEL CORE (FetchContent direttamente)
@@ -64,7 +65,7 @@ add_library(xxhash_lib STATIC ${xxhash_SOURCE_DIR}/xxhash.c)
 target_include_directories(xxhash_lib PUBLIC ${xxhash_SOURCE_DIR})
 
 # ────────────────────────────────────────────────────────────────────────────
-# CORE TARC - Includi i file sorgente direttamente (senza modificare core)
+# CORE TARC - Includi i file sorgente direttamente
 # ────────────────────────────────────────────────────────────────────────────
 set(CORE_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/core/src/engine.cpp
@@ -75,7 +76,6 @@ set(CORE_SOURCES
 # Crea la libreria statica del core
 add_library(tarc_core STATIC ${CORE_SOURCES})
 
-# Directory include del core
 target_include_directories(tarc_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/core/include
     ${zstd_SOURCE_DIR}/lib
@@ -84,7 +84,6 @@ target_include_directories(tarc_core PUBLIC
     ${xxhash_SOURCE_DIR}
 )
 
-# Link dipendenze
 target_link_libraries(tarc_core PUBLIC
     libzstd_static
     lz4_static
@@ -92,14 +91,20 @@ target_link_libraries(tarc_core PUBLIC
     xxhash_lib
 )
 
-# Su macOS, disabilita warning
 if(APPLE)
     target_compile_options(tarc_core PRIVATE -Wno-unused-variable)
 endif()
 
 # ────────────────────────────────────────────────────────────────────────────
-# GUI SOURCES
+# GUI SOURCES - Con gestione automatica MOC
 # ────────────────────────────────────────────────────────────────────────────
+set(GUI_HEADERS
+    src/gui/mainwindow.h
+    src/gui/archivemodel.h
+    src/gui/workerthread.h
+    src/gui/settingsdialog.h
+)
+
 set(GUI_SOURCES
     src/gui/main.cpp
     src/gui/mainwindow.cpp
@@ -113,9 +118,10 @@ qt6_add_resources(GUI_RESOURCES
     src/gui/resources.qrc
 )
 
-# Executable
+# Executable - Qt6 automaticamente gestisce i MOC
 qt6_add_executable(tarc-gui
     ${GUI_SOURCES}
+    ${GUI_HEADERS}
     ${GUI_RESOURCES}
 )
 
@@ -131,6 +137,7 @@ target_link_libraries(tarc-gui PRIVATE
     Qt6::Widgets
     Qt6::Core
     Qt6::Gui
+    Qt6::Core5Compat
     tarc_core
 )
 
