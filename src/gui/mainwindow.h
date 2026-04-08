@@ -1,19 +1,16 @@
-#pragma once
+#ifndef MAINWINDOW_H
+#define MAINWINDOW_H
 
 #include <QMainWindow>
-#include <QTreeWidget>
-#include <QProgressBar>
-#include <QLabel>
-#include <memory>
+#include <QSerialPort>
+#include <QSerialPortInfo>
+#include <QTimer>
+#include <QDateTime>
+#include "serialportmanager.h"
 
 QT_BEGIN_NAMESPACE
-class QAction;
-class QToolBar;
-class QStatusBar;
+namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
-
-class ArchiveModel;
-class WorkerThread;
 
 class MainWindow : public QMainWindow
 {
@@ -23,46 +20,19 @@ public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
+    void appendLog(const QString &message);
+
 private slots:
-    void onOpenArchive();
-    void onAddFiles();
-    void onExtract();
-    void onDeleteFiles();
-    void onTestArchive();
-    void onSettings();
-    void onAbout();
-    
-    void onOperationProgress(int percent, const QString& currentFile);
-    void onOperationFinished(bool success, const QString& message);
-    void onArchiveLoaded(const QString& path);
+    void on_refreshButton_clicked();
+    void on_connectButton_clicked();
+    void on_sendButton_clicked();
+    void updateTimer();
 
 private:
-    void setupUI();
-    void createMenuBar();
-    void createToolBar();
-    void createStatusBar();
-    void updateArchiveList(const QString& path);
-    void setBusy(bool busy);
-    void updateStatus(const QString& message);
-    
-    // UI Components
-    QTreeWidget* m_archiveTree;
-    QProgressBar* m_progressBar;
-    QLabel* m_statusLabel;
-    QLabel* m_sizeLabel;
-    QLabel* m_fileCountLabel;
-    
-    // Actions
-    QAction* m_openAction;
-    QAction* m_addAction;
-    QAction* m_extractAction;
-    QAction* m_deleteAction;
-    QAction* m_testAction;
-    QAction* m_settingsAction;
-    
-    // Core
-    std::unique_ptr<ArchiveModel> m_model;
-    WorkerThread* m_worker;
-    
-    QString m_currentArchive;
+    Ui::MainWindow *ui;
+    SerialPortManager* serialPortManager;
+    QTimer* timer;
+    void setupConnections();
 };
+
+#endif // MAINWINDOW_H
