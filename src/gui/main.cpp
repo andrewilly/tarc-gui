@@ -12,7 +12,7 @@ int main(int argc, char *argv[])
     app.setOrganizationName("TARC");
     
     // Carica stile
-    QFile styleFile(":/styles/darkstyle.qss");
+    QFile styleFile(":/resources/styles/darkstyle.qss");
     if (styleFile.open(QFile::ReadOnly)) {
         QString style = QLatin1String(styleFile.readAll());
         app.setStyleSheet(style);
