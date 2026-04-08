@@ -1,275 +1,103 @@
 #include "mainwindow.h"
-#include "archivemodel.h"
-#include "workerthread.h"
-#include "settingsdialog.h"
-
-#include <QMenuBar>
-#include <QToolBar>
-#include <QStatusBar>
-#include <QTreeWidget>
-#include <QProgressBar>
-#include <QLabel>
+#include "ui_mainwindow.h"
 #include <QMessageBox>
-#include <QFileDialog>
-#include <QApplication>
-#include <QHeaderView>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
-    , m_model(std::make_unique<ArchiveModel>())
-    , m_worker(nullptr)
+    , ui(new Ui::MainWindow)
+    , serialPortManager(new SerialPortManager(this))
+    , timer(new QTimer(this))
 {
-    setupUI();
-    createMenuBar();
-    createToolBar();
-    createStatusBar();
+    ui->setupUi(this);
+    setupConnections();
     
-    setWindowTitle("TARC Archiver");
-    resize(900, 600);
+    // Popola la lista delle porte seriali all'avvio
+    on_refreshButton_clicked();
+    
+    // Configura il timer per aggiornare ogni secondo
+    connect(timer, &QTimer::timeout, this, &MainWindow::updateTimer);
+    timer->start(1000);
+    updateTimer();
 }
 
 MainWindow::~MainWindow()
 {
-    if (m_worker && m_worker->isRunning()) {
-        m_worker->quit();
-        m_worker->wait();
-    }
+    delete ui;
 }
 
-void MainWindow::setupUI()
+void MainWindow::setupConnections()
 {
-    // Tree widget per l'archivio
-    m_archiveTree = new QTreeWidget(this);
-    m_archiveTree->setHeaderLabels(QStringList() << "Nome" << "Codec" << "Originale" << "Compresso" << "Ratio");
-    m_archiveTree->setAlternatingRowColors(true);
-    m_archiveTree->setIndentation(20);
-    m_archiveTree->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    // Connetti i segnali del SerialPortManager agli slot
+    connect(serialPortManager, &SerialPortManager::dataReceived,
+            this, [this](const QString &data) {
+                ui->receivedDataText->append(data);
+            });
     
-    // Imposta larghezze colonne
-    m_archiveTree->header()->setStretchLastSection(false);
-    m_archiveTree->setColumnWidth(0, 350);
-    m_archiveTree->setColumnWidth(1, 60);
-    m_archiveTree->setColumnWidth(2, 100);
-    m_archiveTree->setColumnWidth(3, 100);
-    m_archiveTree->setColumnWidth(4, 80);
+    connect(serialPortManager, &SerialPortManager::errorOccurred,
+            this, [this](const QString &error) {
+                appendLog("ERRORE: " + error);
+                QMessageBox::critical(this, "Errore Seriale", error);
+            });
     
-    setCentralWidget(m_archiveTree);
-    
-    // Progress bar
-    m_progressBar = new QProgressBar(this);
-    m_progressBar->setVisible(false);
-    
-    // Status labels
-    m_statusLabel = new QLabel("Pronto", this);
-    m_sizeLabel = new QLabel("", this);
-    m_fileCountLabel = new QLabel("", this);
+    connect(serialPortManager, &SerialPortManager::logMessage,
+            this, &MainWindow::appendLog);
 }
 
-void MainWindow::createMenuBar()
+void MainWindow::appendLog(const QString &message)
 {
-    auto* fileMenu = menuBar()->addMenu("&File");
-    
-    m_openAction = fileMenu->addAction("&Apri archivio...", this, &MainWindow::onOpenArchive);
-    m_openAction->setShortcut(QKeySequence::Open);
-    
-    fileMenu->addSeparator();
-    
-    m_addAction = fileMenu->addAction("&Aggiungi file...", this, &MainWindow::onAddFiles);
-    m_extractAction = fileMenu->addAction("&Estrai...", this, &MainWindow::onExtract);
-    m_deleteAction = fileMenu->addAction("&Elimina...", this, &MainWindow::onDeleteFiles);
-    
-    fileMenu->addSeparator();
-    
-    m_testAction = fileMenu->addAction("&Test integrità...", this, &MainWindow::onTestArchive);
-    
-    fileMenu->addSeparator();
-    
-    fileMenu->addAction("E&sci", this, &QWidget::close, QKeySequence::Quit);
-    
-    auto* helpMenu = menuBar()->addMenu("&?");
-    helpMenu->addAction("&Informazioni su...", this, &MainWindow::onAbout);
-    helpMenu->addAction("&Impostazioni...", this, &MainWindow::onSettings);
+    QString timestamp = QDateTime::currentDateTime().toString("hh:mm:ss");
+    ui->logText->append("[" + timestamp + "] " + message);
 }
 
-void MainWindow::createToolBar()
+void MainWindow::on_refreshButton_clicked()
 {
-    auto* toolbar = addToolBar("Main");
-    toolbar->setMovable(false);
+    ui->portComboBox->clear();
     
-    toolbar->addAction(m_openAction);
-    toolbar->addSeparator();
-    toolbar->addAction(m_addAction);
-    toolbar->addAction(m_extractAction);
-    toolbar->addAction(m_deleteAction);
-    toolbar->addAction(m_testAction);
-    toolbar->addSeparator();
-    toolbar->addAction(m_settingsAction);
-}
-
-void MainWindow::createStatusBar()
-{
-    statusBar()->addWidget(m_statusLabel, 1);
-    statusBar()->addWidget(m_fileCountLabel);
-    statusBar()->addWidget(m_sizeLabel);
-    statusBar()->addWidget(m_progressBar);
-}
-
-void MainWindow::onOpenArchive()
-{
-    QString filename = QFileDialog::getOpenFileName(this, 
-        "Apri archivio TARC", 
-        QString(),
-        "TARC Archives (*.tar4);;All Files (*)");
-    
-    if (filename.isEmpty()) return;
-    
-    updateArchiveList(filename);
-}
-
-void MainWindow::onAddFiles()
-{
-    if (m_currentArchive.isEmpty()) {
-        onOpenArchive();
-        if (m_currentArchive.isEmpty()) return;
+    const auto ports = QSerialPortInfo::availablePorts();
+    for (const QSerialPortInfo &info : ports) {
+        ui->portComboBox->addItem(info.portName() + " - " + info.description());
     }
     
-    QStringList files = QFileDialog::getOpenFileNames(this,
-        "Seleziona file da aggiungere",
-        QString(),
-        "All Files (*)");
-    
-    if (files.isEmpty()) return;
-    
-    // Crea dialog compressione
-    QDialog dialog(this);
-    dialog.setWindowTitle("Compressione");
-    dialog.resize(500, 400);
-    
-    // ... implementazione dialog compressione
-}
-
-void MainWindow::onExtract()
-{
-    if (m_currentArchive.isEmpty()) {
-        onOpenArchive();
-        if (m_currentArchive.isEmpty()) return;
-    }
-    
-    QString targetDir = QFileDialog::getExistingDirectory(this,
-        "Seleziona cartella di destinazione");
-    
-    if (targetDir.isEmpty()) return;
-    
-    setBusy(true);
-    updateStatus("Estrazione in corso...");
-    
-    m_worker = new WorkerThread(this);
-    connect(m_worker, &WorkerThread::progressUpdated,
-            this, &MainWindow::onOperationProgress);
-    connect(m_worker, &WorkerThread::operationFinished,
-            this, &MainWindow::onOperationFinished);
-    
-    m_worker->runExtract(m_currentArchive, targetDir);
-}
-
-void MainWindow::onDeleteFiles()
-{
-    // Implementazione
-}
-
-void MainWindow::onTestArchive()
-{
-    if (m_currentArchive.isEmpty()) {
-        onOpenArchive();
-        if (m_currentArchive.isEmpty()) return;
-    }
-    
-    setBusy(true);
-    updateStatus("Test in corso...");
-    
-    m_worker = new WorkerThread(this);
-    connect(m_worker, &WorkerThread::progressUpdated,
-            this, &MainWindow::onOperationProgress);
-    connect(m_worker, &WorkerThread::operationFinished,
-            this, &MainWindow::onOperationFinished);
-    
-    m_worker->runTest(m_currentArchive);
-}
-
-void MainWindow::onSettings()
-{
-    SettingsDialog dialog(this);
-    dialog.exec();
-}
-
-void MainWindow::onAbout()
-{
-    QMessageBox::about(this, "Informazioni su TARC",
-        "<h2>TARC Archiver</h2>"
-        "<p>Versione: 1.0.0</p>"
-        "<p>Archiver ibrido con compressione automatica</p>"
-        "<p>Codec supportati: ZSTD, LZ4, LZMA</p>"
-        "<p><a href='https://github.com/tuoaccount/tarc'>GitHub</a></p>");
-}
-
-void MainWindow::onOperationProgress(int percent, const QString& currentFile)
-{
-    m_progressBar->setVisible(true);
-    m_progressBar->setValue(percent);
-    updateStatus(QString("Processando: %1").arg(currentFile));
-}
-
-void MainWindow::onOperationFinished(bool success, const QString& message)
-{
-    m_progressBar->setVisible(false);
-    setBusy(false);
-    
-    if (success) {
-        updateStatus(message);
-        // Ricarica l'archivio
-        if (!m_currentArchive.isEmpty()) {
-            updateArchiveList(m_currentArchive);
-        }
+    if (ports.isEmpty()) {
+        appendLog("Nessuna porta seriale trovata");
     } else {
-        QMessageBox::critical(this, "Errore", message);
-        updateStatus("Operazione fallita: " + message);
+        appendLog(QString("Trovate %1 porte seriali").arg(ports.count()));
     }
 }
 
-void MainWindow::onArchiveLoaded(const QString& path)
+void MainWindow::on_connectButton_clicked()
 {
-    m_currentArchive = path;
-    setWindowTitle(QString("TARC Archiver - %1").arg(path));
-}
-
-void MainWindow::updateArchiveList(const QString& path)
-{
-    if (!m_model->loadArchive(path)) {
-        QMessageBox::warning(this, "Errore", "Impossibile caricare l'archivio: " + path);
-        return;
+    if (serialPortManager->isConnected()) {
+        serialPortManager->disconnectPort();
+        ui->connectButton->setText("Connetti");
+        ui->sendButton->setEnabled(false);
+        appendLog("Disconnesso");
+    } else {
+        QString portName = ui->portComboBox->currentText().split(" - ").first();
+        int baudRate = ui->baudRateComboBox->currentText().toInt();
+        
+        if (serialPortManager->connectToPort(portName, baudRate)) {
+            ui->connectButton->setText("Disconnetti");
+            ui->sendButton->setEnabled(true);
+            appendLog(QString("Connesso a %1 a %2 baud").arg(portName).arg(baudRate));
+        } else {
+            appendLog("Connessione fallita");
+        }
     }
-    
-    m_currentArchive = path;
-    setWindowTitle(QString("TARC Archiver - %1").arg(path));
-    
-    // Aggiorna la tree view
-    m_archiveTree->clear();
-    
-    // Popola l'albero (implementazione)
 }
 
-void MainWindow::setBusy(bool busy)
+void MainWindow::on_sendButton_clicked()
 {
-    m_openAction->setEnabled(!busy);
-    m_addAction->setEnabled(!busy);
-    m_extractAction->setEnabled(!busy);
-    m_deleteAction->setEnabled(!busy);
-    m_testAction->setEnabled(!busy);
-    
-    QApplication::setOverrideCursor(busy ? QCursor(Qt::WaitCursor) : QCursor(Qt::ArrowCursor));
+    QString data = ui->sendDataLineEdit->text();
+    if (!data.isEmpty()) {
+        serialPortManager->sendData(data);
+        appendLog("Inviato: " + data);
+        ui->sendDataLineEdit->clear();
+    }
 }
 
-void MainWindow::updateStatus(const QString& message)
+void MainWindow::updateTimer()
 {
-    m_statusLabel->setText(message);
+    QString currentTime = QDateTime::currentDateTime().toString("hh:mm:ss");
+    ui->timeLabel->setText("Ora: " + currentTime);
 }
