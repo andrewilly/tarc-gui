@@ -102,6 +102,8 @@ void SettingsDialog::saveSettings()
     m_settings.setValue("compression/preferred_codec", m_codecPreference->currentIndex());
     m_settings.setValue("extraction/default_path", m_extractPath->text());
     m_settings.sync();
+    
+    accept();
 }
 
 void SettingsDialog::onBrowseClicked()
