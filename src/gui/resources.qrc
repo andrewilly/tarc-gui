@@ -1,0 +1,16 @@
+<RCC>
+    <qresource prefix="/">
+        <file>../resources/styles/darkstyle.qss</file>
+        <file>../resources/icons/tarc.png</file>
+        <file>../resources/icons/open.png</file>
+        <file>../resources/icons/add.png</file>
+        <file>../resources/icons/extract.png</file>
+        <file>../resources/icons/delete.png</file>
+        <file>../resources/icons/test.png</file>
+        <file>../resources/icons/settings.png</file>
+        <file>../resources/icons/folder.png</file>
+        <file>../resources/icons/file.png</file>
+        <file>../resources/icons/file-text.png</file>
+        <file>../resources/icons/image.png</file>
+    </qresource>
+</RCC>
